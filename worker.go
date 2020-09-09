@@ -5,6 +5,7 @@ import (
 	"hash/fnv"
 	"log"
 	"net/rpc"
+	"time"
 )
 
 //
@@ -34,8 +35,9 @@ func Worker(mapf func(string, string) []KeyValue,
 	// Your worker implementation here.
 
 	// uncomment to send the Example RPC to the master.
-	CallExample()
+	// CallExample()
 
+	myCall()
 }
 
 //
@@ -59,6 +61,26 @@ func CallExample() {
 
 	// reply.Y should be 100.
 	fmt.Printf("reply.Y %v\n", reply.Y)
+}
+
+func myCall() {
+
+	// declare an argument structure.
+	args := MyArgs{}
+
+	// fill in the argument(s).
+	args.MessageType = requestJob
+
+	// declare a reply structure.
+	reply := MyReply{}
+
+	// send the RPC request, wait for the reply.
+	call("Master.Handler", &args, &reply)
+
+	// reply.Y should be 100.
+	fmt.Printf("reply: %v\n", reply.Filename)
+
+	time.Sleep(5 * time.Second)
 }
 
 //

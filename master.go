@@ -1,16 +1,23 @@
 package mr
 
 import (
+	"errors"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"net/rpc"
 	"os"
+	"sync"
 )
 
+//
+// Master class
+//
 type Master struct {
-	// Your definitions here.
-
+	myLock      sync.Mutex
+	allocated   []string
+	unallocated []string
 }
 
 // Your code here -- RPC handlers for the worker to call.
@@ -22,6 +29,31 @@ type Master struct {
 //
 func (m *Master) Example(args *ExampleArgs, reply *ExampleReply) error {
 	reply.Y = args.X + 1
+	return nil
+}
+
+//
+// Alternate handler used for now to handle worker connections
+//
+func (m *Master) Handler(args *MyArgs, reply *MyReply) error {
+	msg := args.MessageType
+	switch msg {
+	case (requestJob):
+		if len(m.unallocated) > 0 {
+			fmt.Println("Worker Connection recieved")
+			m.myLock.Lock()
+
+			newFile := m.unallocated[len(m.unallocated)-1]
+			reply.Filename = newFile
+			m.allocated = append(m.allocated, newFile)
+			m.unallocated = m.unallocated[:len(m.unallocated)-1]
+
+			m.myLock.Unlock()
+
+			return nil
+		}
+		return errors.New("All Map tasks done")
+	}
 	return nil
 }
 
@@ -60,6 +92,7 @@ func (m *Master) Done() bool {
 //
 func MakeMaster(files []string, nReduce int) *Master {
 	m := Master{}
+	m.unallocated = files
 
 	// Your code here.
 

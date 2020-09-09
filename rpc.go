@@ -11,6 +11,10 @@ import (
 	"strconv"
 )
 
+const (
+	requestJob = iota
+)
+
 //
 // example to show how to declare the arguments
 // and reply for an RPC.
@@ -26,12 +30,12 @@ type ExampleReply struct {
 
 // Add your RPC definitions here.
 
-type myArgs struct {
-	messageType string
+type MyArgs struct {
+	MessageType int
 }
 
-type myReply struct {
-	filename string
+type MyReply struct {
+	Filename string
 }
 
 // Cook up a unique-ish UNIX-domain socket name
