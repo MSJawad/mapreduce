@@ -13,6 +13,7 @@ import (
 
 const (
 	requestJob = iota
+	finishMapJob
 )
 
 //

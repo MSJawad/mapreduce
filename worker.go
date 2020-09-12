@@ -3,8 +3,10 @@ package mr
 import (
 	"fmt"
 	"hash/fnv"
+	"io/ioutil"
 	"log"
 	"net/rpc"
+	"os"
 	"time"
 )
 
@@ -32,55 +34,46 @@ func ihash(key string) int {
 func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 
-	// Your worker implementation here.
-
-	// uncomment to send the Example RPC to the master.
-	// CallExample()
-
-	myCall()
+	mapCall(mapf)
 }
 
-//
-// example function to show how to make an RPC call to the master.
-//
-// the RPC argument and reply types are defined in rpc.go.
-//
-func CallExample() {
+func mapCall(mapf func(string, string) []KeyValue) {
 
-	// declare an argument structure.
-	args := ExampleArgs{}
+	var sleeper int
+	_, err := fmt.Scanf("%d", &sleeper)
+	if err != nil {
+		log.Fatalf("error reading")
+	}
 
-	// fill in the argument(s).
-	args.X = 99
+	reply := caller(requestJob)
+	fmt.Println(reply.Filename)
+	file, err := os.Open(reply.Filename)
+	defer file.Close()
+	if err != nil {
+		log.Fatalf("cannot open %v", err)
+	}
+	content, err := ioutil.ReadAll(file)
+	if err != nil {
+		log.Fatalf("cannot read %v", err)
+	}
 
-	// declare a reply structure.
-	reply := ExampleReply{}
+	kva := mapf(reply.Filename, string(content))
+	fmt.Println(kva)
 
-	// send the RPC request, wait for the reply.
-	call("Master.Example", &args, &reply)
+	reply = caller(finishMapJob)
+	time.Sleep(time.Second * time.Duration(sleeper))
 
-	// reply.Y should be 100.
-	fmt.Printf("reply.Y %v\n", reply.Y)
+	fmt.Println("tasks done:", reply.Filename)
+
 }
 
-func myCall() {
-
-	// declare an argument structure.
+func caller(msgType int) MyReply {
 	args := MyArgs{}
-
-	// fill in the argument(s).
-	args.MessageType = requestJob
-
-	// declare a reply structure.
+	args.MessageType = msgType
 	reply := MyReply{}
-
-	// send the RPC request, wait for the reply.
 	call("Master.Handler", &args, &reply)
 
-	// reply.Y should be 100.
-	fmt.Printf("reply: %v\n", reply.Filename)
-
-	time.Sleep(5 * time.Second)
+	return reply
 }
 
 //

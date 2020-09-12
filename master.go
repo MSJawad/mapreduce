@@ -1,13 +1,13 @@
 package mr
 
 import (
-	"errors"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"net/rpc"
 	"os"
+	"strconv"
 	"sync"
 )
 
@@ -15,44 +15,36 @@ import (
 // Master class
 //
 type Master struct {
-	myLock      sync.Mutex
-	allocated   []string
-	unallocated []string
+	myLock    sync.Mutex
+	condcheck *sync.Cond
+
+	maptasksDone    int
+	mapTaskFinished bool
 }
 
-// Your code here -- RPC handlers for the worker to call.
-
-//
-// an example RPC handler.
-//
-// the RPC argument and reply types are defined in rpc.go.
-//
-func (m *Master) Example(args *ExampleArgs, reply *ExampleReply) error {
-	reply.Y = args.X + 1
-	return nil
-}
+var maptasks chan string
 
 //
 // Alternate handler used for now to handle worker connections
 //
 func (m *Master) Handler(args *MyArgs, reply *MyReply) error {
+
 	msg := args.MessageType
+	fmt.Println("connection established for: ", msg)
 	switch msg {
 	case (requestJob):
-		if len(m.unallocated) > 0 {
-			fmt.Println("Worker Connection recieved")
-			m.myLock.Lock()
-
-			newFile := m.unallocated[len(m.unallocated)-1]
-			reply.Filename = newFile
-			m.allocated = append(m.allocated, newFile)
-			m.unallocated = m.unallocated[:len(m.unallocated)-1]
-
-			m.myLock.Unlock()
-
+		select {
+		case filename := <-maptasks:
+			reply.Filename = filename
 			return nil
 		}
-		return errors.New("All Map tasks done")
+	case (finishMapJob):
+		m.myLock.Lock()
+		m.maptasksDone++
+		reply.Filename = strconv.Itoa(m.maptasksDone)
+		m.condcheck.Broadcast()
+		m.myLock.Unlock()
+
 	}
 	return nil
 }
@@ -78,7 +70,7 @@ func (m *Master) server() {
 // if the entire job has finished.
 //
 func (m *Master) Done() bool {
-	ret := false
+	ret := m.mapTaskFinished
 
 	// Your code here.
 
@@ -91,11 +83,28 @@ func (m *Master) Done() bool {
 // nReduce is the number of reduce tasks to use.
 //
 func MakeMaster(files []string, nReduce int) *Master {
+	maptasks = make(chan string)
 	m := Master{}
-	m.unallocated = files
+	m.condcheck = sync.NewCond(&m.myLock)
+	m.mapTaskFinished = false
+	m.maptasksDone = 0
 
 	// Your code here.
+	go func() {
+		for _, file := range files {
+			maptasks <- file
+		}
+	}()
+
+	go func(tasks int) {
+		m.myLock.Lock()
+		for m.maptasksDone != tasks {
+			m.condcheck.Wait()
+		}
+		m.mapTaskFinished = true
+	}(len(files))
 
 	m.server()
+
 	return &m
 }
