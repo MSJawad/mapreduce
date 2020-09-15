@@ -15,8 +15,8 @@ import (
 // Master class
 //
 type Master struct {
-	myLock    sync.Mutex
-	condcheck *sync.Cond
+	finishLock sync.Mutex
+	condcheck  *sync.Cond
 
 	maptasksDone    int
 	mapTaskFinished bool
@@ -35,15 +35,28 @@ func (m *Master) Handler(args *MyArgs, reply *MyReply) error {
 	case (requestJob):
 		select {
 		case filename := <-maptasks:
-			reply.Filename = filename
+			reply.JobAssigned = true
+			reply.JobType = mapJob
+			reply.Content = filename
+			return nil
+		default:
+			reply.JobAssigned = false
+			if m.mapTaskFinished {
+				reply.JobType = finishAllJobs
+			} else {
+				reply.JobType = noJob
+			}
+			reply.Content = ""
 			return nil
 		}
-	case (finishMapJob):
-		m.myLock.Lock()
+	case (finishedMapJob):
+		m.finishLock.Lock()
 		m.maptasksDone++
-		reply.Filename = strconv.Itoa(m.maptasksDone)
+		reply.JobAssigned = false
+		reply.JobType = finishedMapJob
+		reply.Content = strconv.Itoa(m.maptasksDone)
 		m.condcheck.Broadcast()
-		m.myLock.Unlock()
+		m.finishLock.Unlock()
 
 	}
 	return nil
@@ -85,7 +98,7 @@ func (m *Master) Done() bool {
 func MakeMaster(files []string, nReduce int) *Master {
 	maptasks = make(chan string)
 	m := Master{}
-	m.condcheck = sync.NewCond(&m.myLock)
+	m.condcheck = sync.NewCond(&m.finishLock)
 	m.mapTaskFinished = false
 	m.maptasksDone = 0
 
@@ -97,7 +110,7 @@ func MakeMaster(files []string, nReduce int) *Master {
 	}()
 
 	go func(tasks int) {
-		m.myLock.Lock()
+		m.finishLock.Lock()
 		for m.maptasksDone != tasks {
 			m.condcheck.Wait()
 		}

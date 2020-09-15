@@ -10,9 +10,6 @@ import (
 	"time"
 )
 
-//
-// Map functions return a slice of KeyValue.
-//
 type KeyValue struct {
 	Key   string
 	Value string
@@ -34,20 +31,28 @@ func ihash(key string) int {
 func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 
-	mapCall(mapf)
+	for true {
+		reply := caller(requestJob)
+		jobType := reply.JobType
+		switch jobType {
+		case (mapJob):
+			mapCall(&reply, mapf)
+		case (noJob):
+			fmt.Println("No task recieved")
+			time.Sleep(time.Millisecond * 50)
+		case (finishAllJobs):
+			return
+		}
+	}
 }
 
-func mapCall(mapf func(string, string) []KeyValue) {
+//
+// handles a map task
+//
+func mapCall(reply *MyReply, mapf func(string, string) []KeyValue) {
 
-	var sleeper int
-	_, err := fmt.Scanf("%d", &sleeper)
-	if err != nil {
-		log.Fatalf("error reading")
-	}
-
-	reply := caller(requestJob)
-	fmt.Println(reply.Filename)
-	file, err := os.Open(reply.Filename)
+	fmt.Println(reply.Content)
+	file, err := os.Open(reply.Content)
 	defer file.Close()
 	if err != nil {
 		log.Fatalf("cannot open %v", err)
@@ -57,16 +62,19 @@ func mapCall(mapf func(string, string) []KeyValue) {
 		log.Fatalf("cannot read %v", err)
 	}
 
-	kva := mapf(reply.Filename, string(content))
-	fmt.Println(kva)
+	kva := mapf(reply.Content, string(content))
+	//fmt.Println(kva)
+	_ = kva
 
-	reply = caller(finishMapJob)
-	time.Sleep(time.Second * time.Duration(sleeper))
+	finishreply := caller(finishedMapJob)
 
-	fmt.Println("tasks done:", reply.Filename)
+	fmt.Println("task number %v done:", finishreply.Content)
 
 }
 
+//
+// requests a msgType job
+//
 func caller(msgType int) MyReply {
 	args := MyArgs{}
 	args.MessageType = msgType

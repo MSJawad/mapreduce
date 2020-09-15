@@ -1,11 +1,5 @@
 package mr
 
-//
-// RPC definitions.
-//
-// remember to capitalize all names.
-//
-
 import (
 	"os"
 	"strconv"
@@ -13,30 +7,24 @@ import (
 
 const (
 	requestJob = iota
-	finishMapJob
+	mapJob
+	reduceJob
+	noJob
+	finishedMapJob
+	finishedReduceJob
+	finishAllJobs
 )
 
-//
-// example to show how to declare the arguments
-// and reply for an RPC.
-//
-
-type ExampleArgs struct {
-	X int
-}
-
-type ExampleReply struct {
-	Y int
-}
-
-// Add your RPC definitions here.
-
+// arg struct
 type MyArgs struct {
 	MessageType int
 }
 
+// reply struct
 type MyReply struct {
-	Filename string
+	JobAssigned bool
+	JobType     int
+	Content     string
 }
 
 // Cook up a unique-ish UNIX-domain socket name
