@@ -25,6 +25,7 @@ type MyReply struct {
 	JobAssigned bool
 	JobType     int
 	Content     string
+	Nreduce     int
 }
 
 // Cook up a unique-ish UNIX-domain socket name

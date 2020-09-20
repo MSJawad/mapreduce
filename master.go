@@ -1,7 +1,6 @@
 package mr
 
 import (
-	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -20,9 +19,15 @@ type Master struct {
 
 	maptasksDone    int
 	mapTaskFinished bool
+
+	reduceTaskDone     int
+	reduceTaskFinished bool
 }
 
 var maptasks chan string
+var reducetasks chan int
+
+var numReduce int
 
 //
 // Alternate handler used for now to handle worker connections
@@ -30,14 +35,16 @@ var maptasks chan string
 func (m *Master) Handler(args *MyArgs, reply *MyReply) error {
 
 	msg := args.MessageType
-	fmt.Println("connection established for: ", msg)
 	switch msg {
 	case (requestJob):
 		select {
 		case filename := <-maptasks:
+
 			reply.JobAssigned = true
 			reply.JobType = mapJob
 			reply.Content = filename
+			reply.Nreduce = numReduce
+
 			return nil
 		default:
 			reply.JobAssigned = false
@@ -51,10 +58,12 @@ func (m *Master) Handler(args *MyArgs, reply *MyReply) error {
 		}
 	case (finishedMapJob):
 		m.finishLock.Lock()
+
 		m.maptasksDone++
 		reply.JobAssigned = false
 		reply.JobType = finishedMapJob
 		reply.Content = strconv.Itoa(m.maptasksDone)
+
 		m.condcheck.Broadcast()
 		m.finishLock.Unlock()
 
@@ -84,9 +93,6 @@ func (m *Master) server() {
 //
 func (m *Master) Done() bool {
 	ret := m.mapTaskFinished
-
-	// Your code here.
-
 	return ret
 }
 
@@ -97,10 +103,12 @@ func (m *Master) Done() bool {
 //
 func MakeMaster(files []string, nReduce int) *Master {
 	maptasks = make(chan string)
+	reducetasks = make(chan int)
 	m := Master{}
 	m.condcheck = sync.NewCond(&m.finishLock)
 	m.mapTaskFinished = false
 	m.maptasksDone = 0
+	numReduce = nReduce
 
 	// Your code here.
 	go func() {
@@ -116,6 +124,17 @@ func MakeMaster(files []string, nReduce int) *Master {
 		}
 		m.mapTaskFinished = true
 	}(len(files))
+
+	go func(reduce int) {
+
+		for !m.mapTaskFinished {
+			m.condcheck.Wait()
+		}
+		for i := 0; i < reduce; i++ {
+			reducetasks <- i
+		}
+
+	}(nReduce)
 
 	m.server()
 
