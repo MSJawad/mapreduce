@@ -117,11 +117,17 @@ func TestNewRejectsBadConfig(t *testing.T) {
 		{"dir input", Config{Job: "wordcount", Inputs: []string{t.TempDir()}, NReduce: 1, OutputDir: t.TempDir()}, "directory"},
 		{"no output", Config{Job: "wordcount", Inputs: in, NReduce: 1}, "output"},
 		{"used output", Config{Job: "wordcount", Inputs: in, NReduce: 1, OutputDir: nonEmpty}, "not empty"},
+		{"negative lease", Config{Job: "wordcount", Inputs: in, NReduce: 1, OutputDir: t.TempDir(), LeaseTimeout: -time.Second}, "LeaseTimeout"},
+		{"tiny lease", Config{Job: "wordcount", Inputs: in, NReduce: 1, OutputDir: t.TempDir(), LeaseTimeout: time.Nanosecond}, "LeaseTimeout"},
+		{"negative attempts", Config{Job: "wordcount", Inputs: in, NReduce: 1, OutputDir: t.TempDir(), MaxAttempts: -1}, "MaxAttempts"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := New(tc.cfg)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("New error = %v, want it to mention %q", err, tc.want)
+			}
+			if _, err := os.Stat(storage.IntermediateDir(tc.cfg.OutputDir)); !os.IsNotExist(err) {
+				t.Errorf("rejected config left %s behind", storage.IntermediateDir(tc.cfg.OutputDir))
 			}
 		})
 	}
@@ -229,7 +235,7 @@ func TestRenewingKeepsLease(t *testing.T) {
 	}
 }
 
-func TestLateRenewalResumesExpiredAttempt(t *testing.T) {
+func TestLateRenewalOfExpiredAttemptIsRefused(t *testing.T) {
 	t.Parallel()
 	c := newTestCoordinator(t, Config{Inputs: inputs(t, 1), LeaseTimeout: 30 * time.Millisecond, BackupAfter: -1})
 	task := mustRun(t, c, "slow", protocol.Map)
@@ -237,11 +243,44 @@ func TestLateRenewalResumesExpiredAttempt(t *testing.T) {
 	c.mu.Lock()
 	c.expireLeases(time.Now())
 	c.mu.Unlock()
-	if !renew(t, c, "slow", task) {
-		t.Fatal("renewal of an expired but unfinished attempt refused")
+	if renew(t, c, "slow", task) {
+		t.Fatal("expired attempt told to continue")
+	}
+	retry := mustRun(t, c, "fresh", protocol.Map)
+	if retry.ID != task.ID || retry.Attempt == task.Attempt {
+		t.Fatalf("got %+v after the expiry, want a new attempt of task %d", retry, task.ID)
 	}
 	if !report(t, c, "slow", task, "") {
-		t.Error("success from the resumed attempt not accepted")
+		t.Error("success from the expired attempt not accepted while the task was still open")
+	}
+	if renew(t, c, "fresh", retry) {
+		t.Error("retry told to continue after the expired attempt completed the task")
+	}
+}
+
+// A worker's renewal can reach the coordinator after the error report that
+// ended the same attempt. The renewal must not bring the attempt back.
+func TestStaleRenewalDoesNotResurrectFailedAttempt(t *testing.T) {
+	t.Parallel()
+	c := newTestCoordinator(t, Config{Inputs: inputs(t, 1), LeaseTimeout: time.Minute, BackupAfter: -1})
+	failed := mustRun(t, c, "w", protocol.Map)
+	report(t, c, "w", failed, "disk on fire")
+	if renew(t, c, "w", failed) {
+		t.Fatal("failed attempt told to continue")
+	}
+	c.mu.Lock()
+	live := len(c.maps[failed.ID].attempts)
+	c.mu.Unlock()
+	if live != 0 {
+		t.Fatalf("task has %d live attempts after the stale renewal, want 0", live)
+	}
+	start := time.Now()
+	retry := mustRun(t, c, "next", protocol.Map)
+	if retry.ID != failed.ID || retry.Attempt == failed.Attempt {
+		t.Fatalf("got %+v, want a new attempt of task %d", retry, failed.ID)
+	}
+	if waited := time.Since(start); waited > longPoll/2 {
+		t.Errorf("reassignment took %v; want it at once, not after the lease timeout", waited)
 	}
 }
 

@@ -244,12 +244,13 @@ func runCoordinator(ctx context.Context, args []string, stderr io.Writer) error 
 	}
 	log := newLogger(stderr, c.verbose)
 
-	coord, err := coordinator.New(c.config(j, inputs, log))
+	l, err := net.Listen("tcp", *listen)
 	if err != nil {
 		return err
 	}
-	l, err := net.Listen("tcp", *listen)
+	coord, err := coordinator.New(c.config(j, inputs, log))
 	if err != nil {
+		l.Close()
 		return err
 	}
 	log.Info("coordinator listening", "addr", l.Addr().String())

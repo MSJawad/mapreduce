@@ -130,7 +130,7 @@ come back after being written off. The tests inject each of these.
 | Worker dies, hangs or is partitioned | Each attempt holds a lease the worker renews every third of the lease time. When a lease expires, the task becomes idle and is handed to the next worker that asks. | `-lease 10s` |
 | Worker is alive but slow (straggler) | Once a phase has no unassigned tasks, any task running longer than the threshold gets one backup attempt on another worker. The first success wins. The loser learns this at its next renewal and abandons the attempt. | `-backup-after 10s` |
 | `Map` or `Reduce` returns an error or panics | The worker reports the failure and the task is retried on any worker. After `MaxAttempts` failed attempts the job fails with the last error. | `-max-attempts 4` |
-| Written-off worker comes back | Its renewal re-registers the attempt. If it finishes first, its result is accepted. It is as valid as any other attempt. | |
+| Written-off worker comes back | Its next renewal is refused and it abandons the attempt. A success it reports before learning that is still accepted if the task is not done yet, since its result is as valid as any other attempt's. | |
 | Coordinator unreachable | Workers retry with backoff, then exit. | `-timeout 30s` |
 
 **Guarantees.** These assume `Map` and `Reduce` are deterministic, as in the

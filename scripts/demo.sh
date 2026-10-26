@@ -54,5 +54,5 @@ echo "output matches the sequential reference: $(cat data/output/part-* | wc -l 
 
 if [[ "$JOB" == wordcount ]]; then
   echo "most frequent words:"
-  cat data/output/part-* | sort -t$'\t' -k2,2nr | head -n 10 | awk -F'\t' '{ printf "  %-8s %s\n", $1, $2 }'
+  cat data/output/part-* | sort -t$'\t' -k2,2nr | awk -F'\t' 'NR <= 10 { printf "  %-8s %s\n", $1, $2 }'
 fi

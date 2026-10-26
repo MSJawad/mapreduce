@@ -33,6 +33,10 @@ const (
 	DefaultMaxAttempts  = 4
 )
 
+// MinLeaseTimeout is the shortest lease New accepts. Workers renew every third
+// of the lease, so it must leave room for a round trip.
+const MinLeaseTimeout = time.Millisecond
+
 // How long a RequestTask call waits for work before telling the worker to ask
 // again, and how often it rechecks leases and backups meanwhile.
 const (
@@ -63,7 +67,7 @@ type Config struct {
 
 	// LeaseTimeout is how long an attempt may go without renewing its lease
 	// before its task is handed to another worker. Zero means
-	// DefaultLeaseTimeout.
+	// DefaultLeaseTimeout; anything else must be at least MinLeaseTimeout.
 	LeaseTimeout time.Duration
 
 	// BackupAfter is how long a task must have been running, once its phase
@@ -167,6 +171,21 @@ func New(cfg Config) (*Coordinator, error) {
 	if cfg.OutputDir == "" {
 		return nil, errors.New("no output directory")
 	}
+	if cfg.LeaseTimeout == 0 {
+		cfg.LeaseTimeout = DefaultLeaseTimeout
+	}
+	if cfg.LeaseTimeout < MinLeaseTimeout {
+		return nil, fmt.Errorf("LeaseTimeout must be at least %v, got %v", MinLeaseTimeout, cfg.LeaseTimeout)
+	}
+	if cfg.BackupAfter == 0 {
+		cfg.BackupAfter = DefaultBackupAfter
+	}
+	if cfg.MaxAttempts == 0 {
+		cfg.MaxAttempts = DefaultMaxAttempts
+	}
+	if cfg.MaxAttempts < 0 {
+		return nil, fmt.Errorf("MaxAttempts must not be negative, got %d", cfg.MaxAttempts)
+	}
 	inputs := dedupe(cfg.Inputs)
 	if len(inputs) == 0 {
 		return nil, errors.New("no input files")
@@ -180,15 +199,6 @@ func New(cfg Config) (*Coordinator, error) {
 	}
 	if err := prepareOutputDir(cfg.OutputDir); err != nil {
 		return nil, err
-	}
-	if cfg.LeaseTimeout == 0 {
-		cfg.LeaseTimeout = DefaultLeaseTimeout
-	}
-	if cfg.BackupAfter == 0 {
-		cfg.BackupAfter = DefaultBackupAfter
-	}
-	if cfg.MaxAttempts == 0 {
-		cfg.MaxAttempts = DefaultMaxAttempts
 	}
 	log := cfg.Logger
 	if log == nil {
@@ -535,18 +545,9 @@ func (c *Coordinator) renewLease(args *protocol.RenewLeaseArgs, reply *protocol.
 	}
 	now := time.Now()
 	c.touch(args.WorkerID, now)
-	if c.finished || t.state == done {
-		return nil
-	}
 	a, ok := t.attempts[args.Attempt]
-	if !ok {
-		// The lease had expired, but the worker is evidently still alive
-		// (a network hiccup or a long pause). Its result is as good as any
-		// other attempt's, so let it carry on alongside the reassignment.
-		a = &attempt{worker: args.WorkerID, started: now}
-		t.attempts[args.Attempt] = a
-		t.state = running
-		c.log.Info("expired attempt resumed renewing", "kind", t.kind, "task", t.id, "attempt", args.Attempt, "worker", args.WorkerID)
+	if !ok || c.finished {
+		return nil
 	}
 	a.leaseUntil = now.Add(c.cfg.LeaseTimeout)
 	reply.Continue = true
@@ -641,15 +642,6 @@ func (c *Coordinator) notify() {
 	close(c.changed)
 	c.changed = make(chan struct{})
 	c.mu.Unlock()
-}
-
-// OutputFiles lists the job's output files.
-func (c *Coordinator) OutputFiles() []string {
-	files := make([]string, c.cfg.NReduce)
-	for r := range files {
-		files[r] = storage.OutputFile(c.cfg.OutputDir, r)
-	}
-	return files
 }
 
 // String summarizes the counters for logs.

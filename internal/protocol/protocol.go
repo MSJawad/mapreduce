@@ -102,7 +102,9 @@ type RenewLeaseArgs struct {
 }
 
 // RenewLeaseReply says whether the attempt is still useful. Continue is false
-// once the task has been completed by another attempt or the job is over.
+// once the coordinator no longer tracks the attempt: its lease expired, it
+// already reported, another attempt completed the task, or the job is over. A
+// worker told not to continue abandons the attempt.
 type RenewLeaseReply struct {
 	Continue bool
 }

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -266,6 +267,23 @@ func TestKilledWorkerProcess(t *testing.T) {
 	}
 	if !maps.Equal(got, want) {
 		t.Errorf("output differs from the sequential reference:\n got %v\nwant %v", got, want)
+	}
+}
+
+func TestCoordinatorLeavesNoOutputWhenListenFails(t *testing.T) {
+	busy, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer busy.Close()
+	outDir := filepath.Join(t.TempDir(), "out")
+	var logs bytes.Buffer
+	err = run(t.Context(), []string{"coordinator", "-listen", busy.Addr().String(), "-out", outDir, writeInputs(t, 1)[0]}, &logs, &logs)
+	if err == nil {
+		t.Fatal("coordinator started on a port that was already in use")
+	}
+	if _, err := os.Stat(outDir); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("failed start left the output directory behind (stat: %v); a retry would be refused", err)
 	}
 }
 

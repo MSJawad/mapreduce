@@ -3,11 +3,14 @@ package worker
 import (
 	"errors"
 	"fmt"
+	"net"
+	"net/rpc"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/MSJawad/mapreduce/internal/protocol"
 	"github.com/MSJawad/mapreduce/internal/storage"
 	"github.com/MSJawad/mapreduce/job"
 )
@@ -83,5 +86,53 @@ func TestRunGivesUpOnUnreachableCoordinator(t *testing.T) {
 	err := Run(t.Context(), Config{Coordinator: "127.0.0.1:1", CoordinatorTimeout: 200 * time.Millisecond})
 	if !errors.Is(err, ErrCoordinatorUnavailable) {
 		t.Errorf("err = %v, want ErrCoordinatorUnavailable", err)
+	}
+}
+
+func TestRunRejectsNegativeCoordinatorTimeout(t *testing.T) {
+	err := Run(t.Context(), Config{Coordinator: "127.0.0.1:1", CoordinatorTimeout: -time.Second})
+	if err == nil || !strings.Contains(err.Error(), "CoordinatorTimeout") {
+		t.Errorf("err = %v, want the negative timeout rejected", err)
+	}
+}
+
+// stubCoordinator is a net/rpc coordinator that hands every caller the same
+// task, for driving Run with messages a real coordinator would not send.
+type stubCoordinator struct{ task protocol.Task }
+
+func (s *stubCoordinator) RequestTask(_ *protocol.RequestTaskArgs, reply *protocol.RequestTaskReply) error {
+	reply.Action = protocol.Run
+	reply.Task = s.task
+	return nil
+}
+
+func serveStub(t *testing.T, s *stubCoordinator) string {
+	t.Helper()
+	srv := rpc.NewServer()
+	if err := srv.RegisterName(protocol.ServiceName, s); err != nil {
+		t.Fatal(err)
+	}
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { l.Close() })
+	go func() {
+		for {
+			conn, err := l.Accept()
+			if err != nil {
+				return
+			}
+			go srv.ServeConn(conn)
+		}
+	}()
+	return l.Addr().String()
+}
+
+func TestRunRejectsTaskWithUnrenewableLease(t *testing.T) {
+	addr := serveStub(t, &stubCoordinator{task: protocol.Task{Kind: protocol.Map, Attempt: 1, Job: "wordcount", LeaseTimeout: 2 * time.Nanosecond}})
+	err := Run(t.Context(), Config{Coordinator: addr})
+	if err == nil || !strings.Contains(err.Error(), "lease timeout") {
+		t.Errorf("err = %v, want the task refused for its lease timeout", err)
 	}
 }

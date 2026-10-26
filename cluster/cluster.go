@@ -54,12 +54,13 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	if opts.Workers < 1 {
 		return Result{}, errors.New("need at least one worker")
 	}
-	c, err := coordinator.New(opts.Job)
+	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return Result{}, err
 	}
-	l, err := net.Listen("tcp", "127.0.0.1:0")
+	c, err := coordinator.New(opts.Job)
 	if err != nil {
+		l.Close()
 		return Result{}, err
 	}
 	served := make(chan error, 1)

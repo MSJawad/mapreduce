@@ -104,6 +104,9 @@ func Run(ctx context.Context, cfg Config) error {
 	if cfg.CoordinatorTimeout == 0 {
 		cfg.CoordinatorTimeout = DefaultCoordinatorTimeout
 	}
+	if cfg.CoordinatorTimeout < 0 {
+		return fmt.Errorf("CoordinatorTimeout must not be negative, got %v", cfg.CoordinatorTimeout)
+	}
 	log := cfg.Logger
 	if log == nil {
 		log = slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -177,6 +180,10 @@ func (w *worker) call(ctx context.Context, method string, args, reply any) error
 }
 
 func (w *worker) runTask(ctx context.Context, t protocol.Task) error {
+	renewEvery := t.LeaseTimeout / 3
+	if renewEvery <= 0 {
+		return fmt.Errorf("coordinator sent lease timeout %v, too short to renew", t.LeaseTimeout)
+	}
 	info := TaskInfo{Worker: w.cfg.ID, Kind: t.Kind.String(), ID: t.ID, Attempt: t.Attempt}
 	log := w.log.With("kind", t.Kind, "task", t.ID, "attempt", t.Attempt)
 	ref := protocol.TaskRef{WorkerID: w.cfg.ID, Kind: t.Kind, ID: t.ID, Attempt: t.Attempt}
@@ -189,7 +196,7 @@ func (w *worker) runTask(ctx context.Context, t protocol.Task) error {
 	renewed := make(chan struct{})
 	go func() {
 		defer close(renewed)
-		w.renewLease(taskCtx, ref, t.LeaseTimeout, func() {
+		w.renewLease(taskCtx, ref, renewEvery, func() {
 			lost.Store(true)
 			cancel()
 		})
@@ -213,7 +220,7 @@ func (w *worker) runTask(ctx context.Context, t protocol.Task) error {
 		log.Error("worker crashing", "error", crash.err)
 		return fmt.Errorf("%w: %w", ErrCrashed, crash.err)
 	case lost.Load():
-		log.Info("task completed by another attempt; abandoning this one")
+		log.Info("coordinator no longer wants this attempt; abandoning it")
 		w.discard(t)
 		return nil
 	}
@@ -230,12 +237,12 @@ func (w *worker) runTask(ctx context.Context, t protocol.Task) error {
 	return w.call(ctx, protocol.MethodReportTask, &args, &reply)
 }
 
-// renewLease renews the attempt's lease every third of its timeout until ctx
-// is done. It calls lost if the coordinator says the attempt is no longer
+// renewLease renews the attempt's lease at the given interval until ctx is
+// done. It calls lost if the coordinator says the attempt is no longer
 // needed. Failed renewals are only logged: if they keep failing, the lease
 // expires and the coordinator reassigns the task, which is the point.
-func (w *worker) renewLease(ctx context.Context, ref protocol.TaskRef, timeout time.Duration, lost func()) {
-	tick := time.NewTicker(timeout / 3)
+func (w *worker) renewLease(ctx context.Context, ref protocol.TaskRef, every time.Duration, lost func()) {
+	tick := time.NewTicker(every)
 	defer tick.Stop()
 	for {
 		select {
