@@ -30,8 +30,9 @@ trap cleanup EXIT
 echo "building image and starting 1 coordinator + $workers workers (job=$JOB)"
 docker compose --progress quiet build
 docker compose --progress quiet up --detach --scale worker="$workers"
-docker compose wait coordinator >/dev/null
-status=$(docker inspect --format '{{.State.ExitCode}}' "$(docker compose ps --all --quiet coordinator)")
+# docker compose wait only sees running containers and fails when the job has
+# already finished; docker wait also returns the exit code of a stopped one.
+status=$(docker wait "$(docker compose ps --all --quiet coordinator)")
 docker compose logs --no-color --no-log-prefix coordinator | tail -n 4
 if [[ "$status" != 0 ]]; then
   echo "coordinator exited with status $status" >&2
