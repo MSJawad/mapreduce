@@ -78,7 +78,7 @@ type Config struct {
 
 	// MaxAttempts is how many failed attempts (reported errors, not lease
 	// expiries) a task may have before the whole job fails. Zero means
-	// DefaultMaxAttempts.
+	// DefaultMaxAttempts; negative is an error.
 	MaxAttempts int
 
 	// KeepIntermediate leaves intermediate files in place after success.

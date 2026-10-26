@@ -46,7 +46,7 @@ type Config struct {
 
 	// CoordinatorTimeout bounds how long the worker retries an unreachable
 	// coordinator, including at startup. Zero means
-	// DefaultCoordinatorTimeout.
+	// DefaultCoordinatorTimeout; negative is an error.
 	CoordinatorTimeout time.Duration
 
 	// Logger receives task events. Nil discards them.
