@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (Go ${{ matrix.go }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ["1.25.x", "stable"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ matrix.go }}
+      - run: go build ./...
+      - run: go vet ./...
+      - run: go test -race ./...
+      - name: Run each benchmark once
+        run: go test -run '^$' -bench . -benchtime 1x ./...
+
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.15.0
+
+  docker-demo:
+    name: Docker compose demo
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # CI uses the repository's own files as the corpus rather than
+      # downloading books on every run.
+      - name: Build a small corpus
+        run: |
+          mkdir -p "$RUNNER_TEMP/corpus"
+          for f in $(git ls-files '*.go' '*.md'); do
+            cp "$f" "$RUNNER_TEMP/corpus/$(echo "$f" | tr / _).txt"
+          done
+      - name: Word count with 3 workers
+        run: CORPUS_DIR="$RUNNER_TEMP/corpus" WORKERS=3 scripts/demo.sh
+      - name: Distributed grep
+        run: CORPUS_DIR="$RUNNER_TEMP/corpus" JOB=grep PARAM='pattern=(?i)lease' scripts/demo.sh
