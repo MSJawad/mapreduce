@@ -1,6 +1,6 @@
 # mapreduce
 
-[![CI](https://github.com/MSJawad/mapreduce/actions/workflows/ci.yml/badge.svg)](https://github.com/MSJawad/mapreduce/actions/workflows/ci.yml)
+[![CI](https://github.com/MSJawad/mapreduce/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/MSJawad/mapreduce/actions/workflows/ci.yml)
 
 A distributed MapReduce framework in Go, built on the design in Google's
 MapReduce paper. A coordinator splits a job into map and reduce tasks and hands
