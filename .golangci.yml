@@ -1,0 +1,38 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - gocritic
+    - misspell
+    - revive
+    - unconvert
+  settings:
+    errcheck:
+      # Best-effort cleanup and buffered writes whose errors surface later
+      # (bufio.Writer errors are sticky and returned by Flush; files that
+      # matter are closed explicitly with the error checked).
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - (*bufio.Writer).Write
+        - (*bufio.Writer).WriteByte
+        - (*bufio.Writer).WriteString
+        - (*os.File).Close
+        - os.Remove
+        - os.RemoveAll
+        - (net.Conn).Close
+        - (net.Listener).Close
+        - (*net/rpc.Client).Close
+        - (*github.com/MSJawad/mapreduce/internal/storage.RecordReader).Close
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
