@@ -1,0 +1,33 @@
+# One coordinator and a pool of workers sharing ./data. Run it through
+# scripts/demo.sh, which fetches the corpus and checks the result.
+#
+#   JOB      wordcount (default), index or grep
+#   PARAM    job parameter, for example PARAM='pattern=(?i)\bwhale\b' with JOB=grep
+#   REDUCE   number of reduce tasks (default 8)
+#   WORKERS  is passed as --scale worker=N by scripts/demo.sh
+
+x-mapreduce: &mapreduce
+  image: mapreduce-demo:local
+  user: "${MR_UID:-1000}:${MR_GID:-1000}"
+  volumes:
+    - ./data:/data
+
+services:
+  coordinator:
+    <<: *mapreduce
+    build: .
+    command:
+      - coordinator
+      - -listen=:7070
+      - -job=${JOB:-wordcount}
+      - -param=${PARAM:-}
+      - -reduce=${REDUCE:-8}
+      - -out=/data/output
+      - /data/corpus/*.txt
+
+  worker:
+    <<: *mapreduce
+    pull_policy: never # built by the coordinator service
+    command: ["worker", "-coordinator=coordinator:7070"]
+    depends_on:
+      - coordinator
